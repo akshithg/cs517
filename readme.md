@@ -1,4 +1,6 @@
-# CS517
+# Bitcoin mining with SAT solver
 
+Prerequisites:
 
-![Game Plan](https://imgs.xkcd.com/comics/turing_test.png)
+1. https://www.cprover.org/cbmc/
+2.
