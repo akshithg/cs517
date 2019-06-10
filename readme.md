@@ -3,4 +3,4 @@
 Prerequisites:
 
 1. https://www.cprover.org/cbmc/
-2.
+2. brew install cmake boost zlib

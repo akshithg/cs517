@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+int nonce;
 // sha
 // ref: https://github.com/okdshin/PicoSHA2
 
@@ -110,59 +111,32 @@ unsigned int sha2_pad[8] = {
     0x80000000, 0x00000000, 0x00000000, 0x00000000,
     0x00000000, 0x00000000, 0x00000000, 0x00000100};
 
-int verifyhash(unsigned int *block)
+int verifyhash(unsigned int *input)
 {
     int n;
     unsigned int hash[8];
     unsigned int chunk[16];
-    unsigned int *u_nonce = ((unsigned int *)block + 16 + 3);
+    unsigned int *u_nonce = ((unsigned int *)input + 16 + 3);
 
     // 1st SHA256
     sha_inithash((unsigned int *)&hash);
     // round 1
     for (n = 0; n < 16; n++)
-        chunk[n] = *(block + n);
+        chunk[n] = *(input + n);
     sha_processchunk((unsigned int *)&hash, (unsigned int *)&chunk);
 
     // this is to generate a (UN)SAT cnf file with cbmc
-
 #ifdef CBMC
-    // non-deterministically select
+    // non-deterministically select nonce
     *u_nonce = nondet_uint();
-
-// Set satisfiable conditions
-#ifdef SAT
-// nonce range
-#ifdef ONEK
+    +++range
     __CPROVER_assume(*u_nonce > nonce - 500 && *u_nonce < nonce + 500);
-#elif TENK
-    __CPROVER_assume(*u_nonce > nonce - 5000 && *u_nonce < nonce + 5000);
-#else
-    __CPROVER_assume(*u_nonce = nonce);
-#endif
-#else
-
-// Set unsatisfiable conditions
-#ifdef UNSAT
-// nonce is not in the range
-#ifdef ONEK
-    __CPROVER_assume(*u_nonce > nonce - 1000 && *u_nonce < nonce - 1);
-#elif TENK
-    __CPROVER_assume(*u_nonce > nonce - 10000 && *u_nonce < nonce - 1);
-#else
-    __CPROVER_assume(*u_nonce = nonce - 1);
-#endif
-#else
-
-    __CPROVER_assume(*u_nonce = nonce);
-
-#endif // UNSAT
-#endif // SAT
+    ---range
 #endif // CBMC
 
     // round 2
     for (n = 0; n < 4; n++)
-        chunk[n] = *(block + 16 + n);
+        chunk[n] = *(input + 16 + n);
     for (n = 4; n < 16; n++)
         chunk[n] = block_pad[n - 4];
     sha_processchunk((unsigned int *)&hash, (unsigned int *)&chunk);
@@ -209,32 +183,13 @@ int verifyhash(unsigned int *block)
 }
 
 // input
-+++
-unsigned int input[20] = {
-    16777216,   // 01000000
-    2177696427, // 81cd02ab
-    2119605899, // 7e569e8b
-    3448969186, // cd9317e2
-    4271502046, // fe99f2de
-    1154783922, // 44d49ab2
-    3095731108, // b8851ba4
-    2735210496, // a3080000
-    0,          // 00000000
-    3810571970, // e320b6c2
-    4294741365, // fffc8d75
-    69458827,   // 0423db8b
-    515457710,  // 1eb942ae
-    1896781086, // 710e951e
-    3617060783, // d797f7af
-    4236808880, // fc8892b0
-    4059828779, // f1fc122b
-    3354777421, // c7f5d74d
-    4072227866, // f2b9441a
-    1117865621  // 42a14695
-};
----
++++input
+
+---input
+
 int main(int argc, char **argv)
 {
+    nonce = input[19];
     verifyhash(&input[0]);
     return 0;
 }

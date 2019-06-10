@@ -1,11 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int bc = 0;
-unsigned int prevtarget = 0;
-
+int nonce;
 // sha
-// borrowed from https://github.com/okdshin/PicoSHA2
+// ref: https://github.com/okdshin/PicoSHA2
 
 unsigned int initial_message_digest[8] = {
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
@@ -30,19 +28,19 @@ unsigned int add_constant[64] = {
     0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
 
 // init sha256
-void sha_initstate(unsigned int *state)
+void sha_inithash(unsigned int *hash)
 {
     int n;
 
     for (n = 0; n < 8; n++)
     {
-        *state = initial_message_digest[n];
-        state++;
+        *hash = initial_message_digest[n];
+        hash++;
     }
 }
 
 // after init, use this to process the sha256 of the chunk
-void sha_processchunk(unsigned int *state, unsigned int *chunk)
+void sha_processchunk(unsigned int *hash, unsigned int *chunk)
 {
     unsigned int w[64], s0, s1;
     unsigned int a, b, c, d, e, f, g, h;
@@ -62,14 +60,14 @@ void sha_processchunk(unsigned int *state, unsigned int *chunk)
     }
 
     // Initialize hash value for this chunk:
-    a = *(state + 0);
-    b = *(state + 1);
-    c = *(state + 2);
-    d = *(state + 3);
-    e = *(state + 4);
-    f = *(state + 5);
-    g = *(state + 6);
-    h = *(state + 7);
+    a = *(hash + 0);
+    b = *(hash + 1);
+    c = *(hash + 2);
+    d = *(hash + 3);
+    e = *(hash + 4);
+    f = *(hash + 5);
+    g = *(hash + 6);
+    h = *(hash + 7);
 
     // Main loop:
     for (n = 0; n < 64; n++)
@@ -92,113 +90,74 @@ void sha_processchunk(unsigned int *state, unsigned int *chunk)
     }
 
     // Add this chunk's hash to result so far:
-    *(state + 0) += a;
-    *(state + 1) += b;
-    *(state + 2) += c;
-    *(state + 3) += d;
-    *(state + 4) += e;
-    *(state + 5) += f;
-    *(state + 6) += g;
-    *(state + 7) += h;
+    *(hash + 0) += a;
+    *(hash + 1) += b;
+    *(hash + 2) += c;
+    *(hash + 3) += d;
+    *(hash + 4) += e;
+    *(hash + 5) += f;
+    *(hash + 6) += g;
+    *(hash + 7) += h;
 }
 
 // end of sha
 
-unsigned int pad0[12] = {
+unsigned int block_pad[12] = {
     0x80000000, 0x00000000, 0x00000000, 0x00000000,
     0x00000000, 0x00000000, 0x00000000, 0x00000000,
     0x00000000, 0x00000000, 0x00000000, 0x00000280};
 
-unsigned int pad1[8] = {
+unsigned int sha2_pad[8] = {
     0x80000000, 0x00000000, 0x00000000, 0x00000000,
     0x00000000, 0x00000000, 0x00000000, 0x00000100};
 
-int verifyhash(unsigned int *block)
+int verifyhash(unsigned int *input)
 {
-    unsigned int state[8];
-    unsigned int chunk[16];
     int n;
-    unsigned int *u_nonce = ((unsigned int *)block + 16 + 3);
+    unsigned int hash[8];
+    unsigned int chunk[16];
+    unsigned int *u_nonce = ((unsigned int *)input + 16 + 3);
 
-    sha_initstate((unsigned int *)&state);
-    // input_block [0-15] make up the first chunk
+    // 1st SHA256
+    sha_inithash((unsigned int *)&hash);
+    // round 1
     for (n = 0; n < 16; n++)
-    {
-        chunk[n] = *(block + n);
-    }
-    sha_processchunk((unsigned int *)&state, (unsigned int *)&chunk);
+        chunk[n] = *(input + n);
+    sha_processchunk((unsigned int *)&hash, (unsigned int *)&chunk);
 
-// this is generate a (UN)SAT cnf file from the binary to process with cbmc
-
+    // this is to generate a (UN)SAT cnf file with cbmc
 #ifdef CBMC
-    // makes nonce non-deterministic to recover using sat solver
+    // non-deterministically select nonce
     *u_nonce = nondet_uint();
+    __CPROVER_assume(*u_nonce > nonce - 1 && *u_nonce < nonce - 1 );
 
-// Set nonce range that is satisfiable
-#ifdef SATCNF
-    // nonce is in the range
-    unsigned nonce_start = 497822588 - SATCNF;
-    unsigned nonce_end = 497822588 + SATCNF;
-    __CPROVER_assume(*u_nonce > nonce_start && *u_nonce < nonce_end); // used nonce should stay in the given range
-#else
+#endif // CBMC
 
-// Set nonce range that is not satisfiable
-#ifdef UNSATCNF
-    // nonce is not in the range
-    unsigned nonce_start = 497822588;
-    unsigned nonce_end = nonce_start + UNSATCNF + UNSATCNF;
-    __CPROVER_assume(*u_nonce > nonce_start && *u_nonce < nonce_end); // used nonce should stay in the given range
-#else
-
-    /* =============================== GENESIS BLOCK ============================================= */
-    // set assumption
-    __CPROVER_assume(*u_nonce > 497822587 && *u_nonce < 497822589); // 1 nonces only
-    // __CPROVER_assume(*u_nonce > 497822585 && *u_nonce < 497823585); // 1k
-    // __CPROVER_assume(*u_nonce > 497822585 && *u_nonce < 497832585); // 10k
-    // __CPROVER_assume(*u_nonce > 497822585 && *u_nonce < 497922585); // 100k
-    /* =============================== GENESIS BLOCK ============================================= */
-
-    /* =============================== BLOCK 218430 ============================================== */
-    // __CPROVER_assume(*u_nonce > 4043570728 && *u_nonce < 4043570731);
-    /* =============================== BLOCK 218430 ============================================== */
-
-#endif // else UNSATCNF
-#endif // else SATCNF
-#endif
-
-    // input_block[16-19] + padding = 2nd chunk
+    // round 2
     for (n = 0; n < 4; n++)
-    {
-        chunk[n] = *(block + 16 + n);
-    }
+        chunk[n] = *(input + 16 + n);
     for (n = 4; n < 16; n++)
-        chunk[n] = pad0[n - 4];
+        chunk[n] = block_pad[n - 4];
+    sha_processchunk((unsigned int *)&hash, (unsigned int *)&chunk);
 
-    sha_processchunk((unsigned int *)&state, (unsigned int *)&chunk);
-
-    // bitcoin uses sha256(sha256(x)), 2 x hash
-    // copy hash into chunk buffer with padding and repeat sha
+    // 2nd SHA
     for (n = 0; n < 8; n++)
-        chunk[n] = state[n];
+        chunk[n] = hash[n];
     for (n = 8; n < 16; n++)
-        chunk[n] = pad1[n - 8];
-
-    sha_initstate((unsigned int *)&state);
-    sha_processchunk((unsigned int *)&state, (unsigned int *)&chunk);
-
+        chunk[n] = sha2_pad[n - 8];
+    sha_inithash((unsigned int *)&hash);
+    sha_processchunk((unsigned int *)&hash, (unsigned int *)&chunk);
 
 // setting assumptions for the hash based on the target
 #ifdef CBMC
-    /* =============================== GENESIS BLOCK ============================================= */
-    // encode structure of hash below target with leading zeros
     __CPROVER_assume(
-        (unsigned char)(state[7] & 0xff) == 0x00 &&
-        (unsigned char)((state[7] >> 8) & 0xff) == 0x00 &&
-        (unsigned char)((state[7] >> 16) & 0xff) == 0x00); //&&
-        // (unsigned char)((state[7]>>24) & 0xff) == 0x00);
+        (unsigned char)(hash[7] & 0xff) == 0x00 &&
+        (unsigned char)((hash[7] >> 8) & 0xff) == 0x00 &&
+        (unsigned char)((hash[7] >> 16) & 0xff) == 0x00); //&&
+    // (unsigned char)((hash[7]>>24) & 0xff) == 0x00);
 
     int flag = 0;
-    if ((unsigned char)((state[7] >> 24) & 0xff) != 0x00)
+    if ((unsigned char)((hash[7] >> 24) & 0xff) != 0x00)
         flag = 1;
 
     // counterexample will contain an additional leading 0 in the hash which makes it below target
@@ -208,12 +167,13 @@ int verifyhash(unsigned int *block)
 // print hash
 #ifndef CBMC
     // printing in reverse, because bitcoin hash is big endian
+    printf("hash: ");
     for (n = 7; n >= 0; n--)
     {
-        printf("%02x-", state[n] & 0xff);
-        printf("%02x-", (state[n] >> 8) & 0xff);
-        printf("%02x-", (state[n] >> 16) & 0xff);
-        printf("%02x-", (state[n] >> 24) & 0xff);
+        printf("%02x", hash[n] & 0xff);
+        printf("%02x", (hash[n] >> 8) & 0xff);
+        printf("%02x", (hash[n] >> 16) & 0xff);
+        printf("%02x", (hash[n] >> 24) & 0xff);
     }
     printf("\n");
 #endif
@@ -222,10 +182,31 @@ int verifyhash(unsigned int *block)
 }
 
 // input
-unsigned int input_block[20] = {};
+unsigned int input[20] = {
+16777216,
+2177696427,
+2119605899,
+3448969186,
+4271502046,
+1154783922,
+3095731108,
+2735210496,
+0,
+3810571970,
+4294741365,
+69458827,
+515457710,
+1896781086,
+3617060783,
+4236808880,
+4059828779,
+3354777421,
+4072227866,
+1117865621};
 
 int main(int argc, char **argv)
 {
-    verifyhash(&input_block[0]);
+    nonce = input[19];
+    verifyhash(&input[0]);
     return 0;
 }
