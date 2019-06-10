@@ -6,9 +6,9 @@ premine: clean
 	./a.out
 
 sat: clean
-	./make_c.py ./125552.json true 1
+	./make_c.py ./125552.json true 2
 	cbmc -DCBMC ./mine.c
 
 unsat: clean
-	./make_c.py ./125552.json false 1
+	./make_c.py ./125552.json false 2
 	cbmc -DCBMC ./mine.c
